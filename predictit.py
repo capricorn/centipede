@@ -49,6 +49,13 @@ class PredictItAPI():
         resp = requests.get('https://www.predictit.org/api/Account/token', data=data)
         return resp.json()['access_token']
 
+    def get_profile_detail(self):
+        headers = {
+            'Authorization': f'Bearer {self.token}'
+        }
+        resp = requests.get('https://www.predictit.org/api/Profile/Detail', headers=headers)
+        return resp.json()
+
     def authenticate(self, auth_file):
         with open(auth_file, 'r') as f:
             user, passwd = tuple(f.read().split())

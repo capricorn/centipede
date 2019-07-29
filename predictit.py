@@ -50,6 +50,20 @@ class PredictItAPI():
         resp = requests.get('https://www.predictit.org/api/Account/token', data=data)
         return resp.json()['access_token']
 
+    # Obtain a websocket connection token, necessary for later connections
+    def negotiate_ws(self):
+        params = {
+            'clientProtocol': 1.5,
+            'bearer': self.token,
+            'connectionData': json.dumps([{
+                'name': 'markethub'
+            }]),
+            '_': floor(time.time())
+        }
+
+        resp = requests.get('https://www.predictit.org/signalr/negotiate', params=params)
+        return resp.json()
+
     def get_profile_detail(self):
         headers = {
             'Authorization': f'Bearer {self.token}'

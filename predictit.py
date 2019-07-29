@@ -31,6 +31,13 @@ class PredictItAPI():
         self.market_id = market_id
         self.lock = threading.Lock()
 
+    # Eventually replace the constructor with this
+    # And maybe have the auth method just take a username and password
+    @staticmethod
+    def create(username, password):
+        p = PredictItAPI(0)
+        p.token = PredictItAPI.get_auth_token(username, password)
+
     @staticmethod
     def get_auth_token(username, password):
         data = {

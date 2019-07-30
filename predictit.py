@@ -26,6 +26,9 @@ class Market():
 # Shouldn't require a market to create it
 # Phase out
 class PredictItAPI():
+    TRADE_TYPE_BUY = 1
+    TRADE_TYPE_SELL = 3
+
     def __init__(self, market_id, token=''):
         self.token = token
         self.market_id = market_id
@@ -63,6 +66,27 @@ class PredictItAPI():
 
         resp = requests.get('https://www.predictit.org/signalr/negotiate', params=params)
         return resp.json()
+
+    def _trade(self, contract_id, price, vol, trade_type):
+        data = {
+            'quantity': vol,
+            'pricePerShare': price, # Should be in cents, not dollars
+            'contractId': contract_id,
+            'tradeType': trade_type
+        }
+
+        headers = {
+            'Authorization': f'Bearer {self.token}'
+        }
+
+        return requests.post('https://www.predictit.org/api/Trade/SubmitTrade', 
+                data=data, headers=headers).json()
+
+    def sell(self, contract_id, price, vol):
+        return self._trade(contract_id, price, vol, PredictItAPI.TRADE_TYPE_SELL)
+
+    def buy(self, contract_id, price, vol):
+        return self._trade(contract_id, price, vol, PredictItAPI.TRADE_TYPE_BUY)
 
     def get_profile_detail(self):
         headers = {

@@ -88,6 +88,13 @@ class PredictItAPI():
     def buy(self, contract_id, price, vol):
         return self._trade(contract_id, price, vol, PredictItAPI.TRADE_TYPE_BUY)
 
+    def get_contract_portfolio(self, contract_id):
+        headers = {
+            'Authorization': f'Bearer {self.token}'
+        }
+
+        return requests.get('https://www.predictit.org/api/Profile/contract/16575/Shares', headers=headers).json()
+
     def get_profile_detail(self):
         headers = {
             'Authorization': f'Bearer {self.token}'

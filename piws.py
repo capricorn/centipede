@@ -105,6 +105,16 @@ class PredictItWebSocket():
     def start(self):
         asyncio.run(self._start())
 
+    def _route_status_data(self, data):
+        pass
+
+    @staticmethod
+    def _convert_orderbook(orderbook):
+        return { 
+            'bid': list(map(lambda no: (no[1]['costPerShareYes'], no[1]['quantity']), orderbook['noOrders'].items())),
+            'ask': list(map(lambda no: (no[1]['costPerShareYes'], no[1]['quantity']), orderbook['yesOrders'].items())) 
+        }
+
     # Need to understand which methods should be async
     def _route_trade_data(self, data):
         #print(data)
@@ -113,7 +123,8 @@ class PredictItWebSocket():
         if 'p' in data['d']['b']:
             msg = data['d']['b']['p']
             if msg.startswith('contractOrderBook') and self.orderbook_change_callback:
-                self.orderbook_change_callback(data['d']['b']['d'])
+                #print(PredictItWebSocket._convert_orderbook(data['d']['b']['d']))
+                self.orderbook_change_callback(PredictItWebSocket._convert_orderbook(data['d']['b']['d']))
         else:
             pass
 

@@ -111,8 +111,10 @@ class PredictItWebSocket():
     @staticmethod
     def _convert_orderbook(orderbook):
         return { 
-            'bid': list(map(lambda no: (no[1]['costPerShareYes'], no[1]['quantity']), orderbook['noOrders'].items())),
-            'ask': list(map(lambda no: (no[1]['costPerShareYes'], no[1]['quantity']), orderbook['yesOrders'].items())) 
+            'bid': list(map(lambda no: (int(no[1]['costPerShareYes']*100), no[1]['quantity']), 
+                orderbook['noOrders'].items())),
+            'ask': list(map(lambda no: (int(no[1]['costPerShareYes']*100), no[1]['quantity']), 
+                orderbook['yesOrders'].items())) 
         }
 
     # Need to understand which methods should be async

@@ -25,13 +25,15 @@ class PredictItWebSocket():
         self.contract_stats_callback = None
         self.orderbook_change_callback = None
         self.ws = None
+        self.queue = None
+        self.queue_callback = None
         #self.token = token
         #self.ws_token = ws_token
 
     def set_market_stats_callback(self, callback):
         self.market_stats_callback = callback
 
-    def set_contract_stats_callback(eslf, callback):
+    def set_contract_stats_callback(self, callback):
         self.contract_stats_callback = callback
 
     def set_orderbook_change_callback(self, callback):
@@ -54,6 +56,7 @@ class PredictItWebSocket():
         p = pi.PredictItAPI(0).create(*load_auth())
         #p.authenticate('auth.txt')
         ws_token = p.negotiate_ws()['ConnectionToken']
+        print(ws_token)
 
         params = {
             'transport': 'webSockets',
@@ -69,8 +72,9 @@ class PredictItWebSocket():
         async with websockets.connect(url) as ws:
             while True:
                 data = await ws.recv()
+                #print(data)
+                await self.queue.put(data)
                 #print(f'status: {data}')
-            pass
 
     async def connect_trade_feed(self):
         params = {
@@ -79,31 +83,49 @@ class PredictItWebSocket():
         }
 
         headers = {
-            'Host': 's-usc1c-nss-204.firebaseio.com'
+            'Host': 's-usc1c-nss-203.firebaseio.com'
         }
 
-        req = requests.Request('GET', 'https://s-usc1c-nss-204.firebaseio.com/.ws', params=params).prepare()
+        req = requests.Request('GET', 'https://s-usc1c-nss-203.firebaseio.com/.ws', params=params).prepare()
         url = 'wss://' + req.url[8:]
+        print(url)
 
-        self.ws = await websockets.connect(url)
-        await self.ws.recv()
-        await self.ws.send(json.dumps({"t":"d","d":{"r":1,"a":"s","b":{"c":{"sdk.js.4-9-1":1}}}}))
-        await self.ws.send(json.dumps({"t":"d","d":{"r":2,"a":"q","b":{"p":"/marketStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":1,"h":""}}}))
-        # Have to subscribe to contract stats first?
-        await self.ws.send(json.dumps({"t":"d","d":{"r":3,"a":"q","b":{"p":"/contractStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":2,"h":""}}}))
-        await self.ws.send(subscribe_contract_orderbook_msg('16575', 4))
-        
+        #self.ws = await websockets.connect(url)
+        async with websockets.connect(url) as ws:
+            await ws.recv()
+            await ws.send(json.dumps({"t":"d","d":{"r":1,"a":"s","b":{"c":{"sdk.js.4-9-1":1}}}}))
+            await ws.send(json.dumps({"t":"d","d":{"r":2,"a":"q","b":{"p":"/marketStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":1,"h":""}}}))
+            # Have to subscribe to contract stats first?
+            await ws.send(json.dumps({"t":"d","d":{"r":3,"a":"q","b":{"p":"/contractStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":2,"h":""}}}))
+            await ws.send(subscribe_contract_orderbook_msg('16575', 4))
+            
+            while True:
+                data = await ws.recv()
+                #print(data)
+                await self.queue.put(data)
+                #print(f'trade: {data}')
+                #self._route_trade_data(data)
+
+    def set_queue_callback(self, callback):
+        self.queue_callback = callback
+
+    async def _run_queue(self):
         while True:
-            data = await self.ws.recv()
-            #print(f'trade: {data}')
-            self._route_trade_data(data)
+            data = await self.queue.get()
+            if self.queue_callback:
+                # async?
+                self.queue_callback(data)
 
     # Begin running the event loop
     async def _start(self):
+
         await asyncio.gather(self.connect_trade_feed(), self.connect_status_feed())
 
-    def start(self):
-        asyncio.run(self._start())
+    async def start(self):
+        self.queue = asyncio.Queue()
+        await asyncio.gather(self.connect_trade_feed(), self.connect_status_feed(), self._run_queue())
+        #asyncio.run(self._start())
+        #asyncio.run(self.connect_trade_feed())
 
     def _route_status_data(self, data):
         pass

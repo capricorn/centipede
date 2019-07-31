@@ -8,6 +8,11 @@ import websockets
 import requests
 import predictit as pi
 
+
+class OrderbookEvent:
+    bids = []
+    asks = []
+
 # Maybe create a simple request object for tracking request counts (although I'm not sure its necessary) 
 # Create a basic socket with hooks that are called on a message
 
@@ -97,12 +102,12 @@ class PredictItWebSocket():
             await ws.send(json.dumps({"t":"d","d":{"r":2,"a":"q","b":{"p":"/marketStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":1,"h":""}}}))
             # Have to subscribe to contract stats first?
             await ws.send(json.dumps({"t":"d","d":{"r":3,"a":"q","b":{"p":"/contractStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":2,"h":""}}}))
-            await ws.send(subscribe_contract_orderbook_msg('16575', 4))
+            await ws.send(subscribe_contract_orderbook_msg('16595', 4))
             
             while True:
                 data = await ws.recv()
                 #print(data)
-                await self.queue.put(data)
+                await self.queue.put(self._route_trade_data(data))
                 #print(f'trade: {data}')
                 #self._route_trade_data(data)
 
@@ -114,7 +119,7 @@ class PredictItWebSocket():
             data = await self.queue.get()
             if self.queue_callback:
                 # async?
-                self.queue_callback(data)
+                await self.queue_callback(data)
 
     # Begin running the event loop
     async def _start(self):
@@ -143,14 +148,18 @@ class PredictItWebSocket():
     def _route_trade_data(self, data):
         #print(data)
         data = json.loads(data)
-        if data == {}: return
+        if data == {}: return {}
         if 'p' in data['d']['b']:
             msg = data['d']['b']['p']
-            if msg.startswith('contractOrderBook') and self.orderbook_change_callback:
+            if msg.startswith('contractOrderBook'):
+                ob = OrderbookEvent()
+                trades = PredictItWebSocket._convert_orderbook(data['d']['b']['d'])
+                ob.bids = trades['bid']
+                ob.asks = trades['ask']
                 #print(PredictItWebSocket._convert_orderbook(data['d']['b']['d']))
-                self.orderbook_change_callback(PredictItWebSocket._convert_orderbook(data['d']['b']['d']))
-        else:
-            pass
+                #self.orderbook_change_callback(PredictItWebSocket._convert_orderbook(data['d']['b']['d']))
+                return ob
+        return data
 
     def stop():
         pass

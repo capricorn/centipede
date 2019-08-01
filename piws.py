@@ -45,6 +45,8 @@ class OrderbookEvent():
 
 # For two string, just dump as json
 class ContractOwnershipUpdateEvent():
+    event_message = 'contractOwnershipUpdate_data'
+
     def __init__(self):
         self.contract_id      = 0
         self.trade_type       = 0
@@ -148,6 +150,7 @@ class PredictItWebSocket():
         async with websockets.connect(url) as ws:
             while True:
                 data = await ws.recv()
+                data = json.loads(data)
                 #print(data)
                 await self.queue.put(self._parse_status_feed(data))
                 #print(f'status: {data}')
@@ -162,6 +165,12 @@ class PredictItWebSocket():
     # parse raw status feed data and return as status feed event
     # Might accidentally miss an important message since it's a list
     def _parse_status_feed(self, msg):
+        if 'M' in msg:
+            for event in msg['M']:
+                if event['A'][0] == ContractOwnershipUpdateEvent.event_message:
+                    return json.loads(str(event['A'][1]).replace('\'', '"'), cls=ContractOwnershipUpdateEvent.ContractOwnershipUpdateEventDecoder)
+        return msg
+        '''
         msg = json.loads(msg)
         print(f'status: {msg}')
         if 'M' in msg:
@@ -170,6 +179,7 @@ class PredictItWebSocket():
                     print('SHARES TRADED')
                     return self._parse_shares_traded_event(update['A'])
         return msg
+        '''
 
     async def connect_trade_feed(self):
         params = {
@@ -192,7 +202,7 @@ class PredictItWebSocket():
             await ws.send(json.dumps({"t":"d","d":{"r":2,"a":"q","b":{"p":"/marketStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":1,"h":""}}}))
             # Have to subscribe to contract stats first?
             await ws.send(json.dumps({"t":"d","d":{"r":3,"a":"q","b":{"p":"/contractStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":2,"h":""}}}))
-            await ws.send(subscribe_contract_orderbook_msg('16595', 4))
+            await ws.send(subscribe_contract_orderbook_msg('16688', 4))
             
             while True:
                 data = await ws.recv()
@@ -260,13 +270,18 @@ class PredictItWebSocket():
         if 'p' in data['d']['b']:
             msg = data['d']['b']['p']
             if msg.startswith('contractOrderBook'):
+                # Make sure to fix up the orderbook in the actual decoder
+                event = json.loads(str(data).replace("'", '"') , cls=OrderbookEvent.OrderbookEventDecoder)
+                return event
+                '''
                 ob = OrderbookEvent()
                 trades = PredictItWebSocket._convert_orderbook(data['d']['b']['d'])
                 ob.bids = trades['bid']
                 ob.asks = trades['ask']
+                '''
                 #print(PredictItWebSocket._convert_orderbook(data['d']['b']['d']))
                 #self.orderbook_change_callback(PredictItWebSocket._convert_orderbook(data['d']['b']['d']))
-                return ob
+                #return ob
         return data
 
     def stop():

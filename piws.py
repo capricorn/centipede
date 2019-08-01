@@ -8,10 +8,47 @@ import websockets
 import requests
 import predictit as pi
 
+# Check these 
+TRADE_TYPE_BUY = 1
+TRADE_TYPE_SELL = 3
 
-class OrderbookEvent:
-    bids = []
-    asks = []
+class OrderbookEvent():
+    def __init__(self):
+        self.bids = []
+        self.asks = []
+        self.contract_id = 0
+
+    def __str__(self):
+        return f'contract: {self.contract_id}\n' \
+               f'bids: {self.bids}\n' \
+               f'asks: {self.asks}'
+
+    class OrderbookEventDecoder(json.JSONDecoder):
+        def __init__(self, *args, **kwargs):
+            self.ob_event = OrderbookEvent()
+            json.JSONDecoder.__init__(self, object_hook=self.hook, *args, **kwargs)
+
+        def hook(self, data):
+            print(data)
+            if 'tradeType' in data:
+                if data['tradeType'] == 1:  # May be wrong
+                    self.ob_event.bids.append((data['costPerShareYes'], data['quantity']))
+                    return self.ob_event
+                elif data['tradeType'] == 0:  # May be wrong
+                    self.ob_event.asks.append((data['costPerShareYes'], data['quantity']))
+                    return self.ob_event
+            elif 'p' in data and data['p'].startswith('contractOrderBook'):
+                # data['p'] = 'contractOrderBook/\d+'
+                self.ob_event.contract_id = data['p'][data['p'].index('/')+1:]
+
+            return self.ob_event 
+
+class SharesTradedEvent:
+    trade_type = '' # bought / sold
+    status = '' # open / close?
+    quantity = 0
+    price = 0
+    timestamp = 0
 
 # Maybe create a simple request object for tracking request counts (although I'm not sure its necessary) 
 # Create a basic socket with hooks that are called on a message
@@ -78,8 +115,27 @@ class PredictItWebSocket():
             while True:
                 data = await ws.recv()
                 #print(data)
-                await self.queue.put(data)
+                await self.queue.put(self._parse_status_feed(data))
                 #print(f'status: {data}')
+
+    def _parse_shares_traded_event(self, msg):
+        event = SharesTradedEvent()
+        event.quantity = msg[1]['Quantity']
+        event.trade_type = TRADE_TYPE_BUY if msg[1]['TradeType'] == TRADE_TYPE_BUY else TRADE_TYPE_SELL
+        event.price = msg[1]['PricePerShare']
+        event.timestamp = msg[1]['TimeStamp']
+
+    # parse raw status feed data and return as status feed event
+    # Might accidentally miss an important message since it's a list
+    def _parse_status_feed(self, msg):
+        msg = json.loads(msg)
+        print(f'status: {msg}')
+        if 'M' in msg:
+            for update in msg['M']:
+                if 'A' in update and 'notification_shares_traded' in update['A']:
+                    print('SHARES TRADED')
+                    return self._parse_shares_traded_event(update['A'])
+        return msg
 
     async def connect_trade_feed(self):
         params = {
@@ -137,11 +193,29 @@ class PredictItWebSocket():
 
     @staticmethod
     def _convert_orderbook(orderbook):
+        bids = []
+        asks = []
+        
+        print(orderbook)
+        if orderbook['noOrders'] != 0:
+            bids = list(map(lambda no: (int(no[1]['costPerShareYes']*100), no[1]['quantity']), 
+                orderbook['noOrders'].items()))
+
+        if orderbook['yesOrders'] != 0:
+            asks = list(map(lambda no: (int(no[1]['costPerShareYes']*100), no[1]['quantity']), 
+                orderbook['yesOrders'].items()))
+
+        '''
         return { 
-            'bid': list(map(lambda no: (int(no[1]['costPerShareYes']*100), no[1]['quantity']), 
-                orderbook['noOrders'].items())),
+            'bid': ,
             'ask': list(map(lambda no: (int(no[1]['costPerShareYes']*100), no[1]['quantity']), 
                 orderbook['yesOrders'].items())) 
+        }
+        '''
+
+        return {
+            'bid': bids,
+            'ask': asks
         }
 
     # Need to understand which methods should be async
@@ -241,7 +315,7 @@ async def trading_connect():
         while True:
             data = json.loads(await ws.recv())
             msg = data['d']['b']
-            print(msg)
+            #print(msg)
 
             # Here's where you handle the arb
             #if 'p' in msg and msg['p'].startswith('/contractOrderBook'):
@@ -263,12 +337,14 @@ def main():
     detail = p.get_profile_detail()
     negotiation = p.negotiate_ws()
     ws_token = negotiation['ConnectionToken']
-#print(ws_token)
+    #print(ws_token)
 
-#asyncio.get_event_loop().run_until_complete(connect(p.token, ws_token))
-#asyncio.get_event_loop().run_until_complete(trading_connect())
+    #asyncio.get_event_loop().run_until_complete(connect(p.token, ws_token))
+    #asyncio.get_event_loop().run_until_complete(trading_connect())
 
-#w = PredictItWebSocket(p.token, ws_token)
+    #w = PredictItWebSocket(p.token, ws_token)
+
+    # 16684
     w = PredictItWebSocket()
     '''
     w.set_orderbook_change_callback(lambda p: print(p))

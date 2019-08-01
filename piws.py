@@ -12,6 +12,7 @@ import predictit as pi
 TRADE_TYPE_BUY = 1
 TRADE_TYPE_SELL = 3
 
+# This is actually a trade event, not a status event 
 class OrderbookEvent():
     def __init__(self):
         self.bids = []
@@ -29,7 +30,6 @@ class OrderbookEvent():
             json.JSONDecoder.__init__(self, object_hook=self.hook, *args, **kwargs)
 
         def hook(self, data):
-            print(data)
             if 'tradeType' in data:
                 if data['tradeType'] == 1:  # May be wrong
                     self.ob_event.bids.append((data['costPerShareYes'], data['quantity']))
@@ -38,10 +38,44 @@ class OrderbookEvent():
                     self.ob_event.asks.append((data['costPerShareYes'], data['quantity']))
                     return self.ob_event
             elif 'p' in data and data['p'].startswith('contractOrderBook'):
-                # data['p'] = 'contractOrderBook/\d+'
+                # structure of data['p'] = 'contractOrderBook/\d+'
                 self.ob_event.contract_id = data['p'][data['p'].index('/')+1:]
 
             return self.ob_event 
+
+# For two string, just dump as json
+class ContractOwnershipUpdateEvent():
+    def __init__(self):
+        self.contract_id      = 0
+        self.trade_type       = 0
+        self.quantity         = 0
+        self.open_buy_orders  = 0
+        self.open_sell_orders = 0
+        self.average_pps      = 0
+        self.timestamp        = 0
+
+    class ContractOwnershipUpdateEventDecoder(json.JSONDecoder):
+        def __init__(self, *args, **kwargs):
+            self.event = ContractOwnershipUpdateEvent()
+            json.JSONDecoder.__init__(self, object_hook=self.hook, *args, **kwargs)
+
+        def hook(self, data):
+            if 'ContractId' in data:
+                self.event.contract_id = data['ContractId']
+            if 'UserPrediction' in data:
+                self.event.trade_type = data['UserPrediction']
+            if 'UserQuantity' in data:
+                self.event.quantity = data['UserQuantity']
+            if 'UserOpenOrdersBuyQuantity' in data:
+                self.event.open_buy_orders = data['UserOpenOrdersBuyQuantity']
+            if 'UserOpenOrdersSellQuantity' in data:
+                self.event.open_sell_orders = data['UserOpenOrdersSellQuantity']
+            if 'UserAveragePricePerShare' in data:
+                self.event.average_pps = data['UserAveragePricePerShare']
+            if 'TimeStamp' in data:
+                self.event.timestamp = data['TimeStamp']
+
+            return self.event
 
 class SharesTradedEvent:
     trade_type = '' # bought / sold

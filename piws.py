@@ -32,10 +32,10 @@ class OrderbookEvent():
         def hook(self, data):
             if 'tradeType' in data:
                 if data['tradeType'] == 1:  # May be wrong
-                    self.ob_event.bids.append((data['costPerShareYes'], data['quantity']))
+                    self.ob_event.bids.append((int(data['costPerShareYes']*100), data['quantity']))
                     return self.ob_event
                 elif data['tradeType'] == 0:  # May be wrong
-                    self.ob_event.asks.append((data['costPerShareYes'], data['quantity']))
+                    self.ob_event.asks.append((int(data['costPerShareYes']*100), data['quantity']))
                     return self.ob_event
             elif 'p' in data and data['p'].startswith('contractOrderBook'):
                 # structure of data['p'] = 'contractOrderBook/\d+'
@@ -202,7 +202,7 @@ class PredictItWebSocket():
             await ws.send(json.dumps({"t":"d","d":{"r":2,"a":"q","b":{"p":"/marketStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":1,"h":""}}}))
             # Have to subscribe to contract stats first?
             await ws.send(json.dumps({"t":"d","d":{"r":3,"a":"q","b":{"p":"/contractStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":2,"h":""}}}))
-            await ws.send(subscribe_contract_orderbook_msg('16688', 4))
+            await ws.send(subscribe_contract_orderbook_msg('16606', 4))
             
             while True:
                 data = await ws.recv()
@@ -359,7 +359,7 @@ async def trading_connect():
         await ws.send(json.dumps({"t":"d","d":{"r":2,"a":"q","b":{"p":"/marketStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":1,"h":""}}}))
         # Have to subscribe to contract stats first?
         await ws.send(json.dumps({"t":"d","d":{"r":3,"a":"q","b":{"p":"/contractStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":2,"h":""}}}))
-        await ws.send(subscribe_contract_orderbook_msg('16578', 4))
+        await ws.send(subscribe_contract_orderbook_msg('16606', 4))
 
         while True:
             data = json.loads(await ws.recv())

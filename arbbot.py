@@ -75,7 +75,7 @@ class ArbBot():
             if self.state == ArbBot.STATE_WAITING_FOR_PURCHASE and self.contract_id == update.contract_id:
                 if update.open_buy_orders == 0:
                     print('Finally bought shares!')
-                    self.sell_shares(self.sell_position)
+                    await self.sell_shares(self.sell_position)
                 else:
                     print(f'Still waiting on: {update.open_buy_orders}')
             elif self.state == ArbBot.STATE_WAITING_FOR_SALE and self.contract_id == update.contract_id:
@@ -93,10 +93,6 @@ class ArbBot():
             print('Ownership update!')
             await self.handle_contract_update(event)
 
-async def run_queue(q):
-    while True:
-        data = await q.get()
-
 def load_auth():
     with open('auth.txt', 'r') as f:
         return f.read().split()
@@ -113,7 +109,11 @@ def main():
     bot = ArbBot('16684')
     ws.set_queue_callback(bot.handle_event)
     #ws.set_queue_callback(queue_cb)
-    asyncio.run(ws.start())
+    try:
+        asyncio.run(ws.start())
+    except KeyboardInterrupt:
+        print('\nBye.')
+        ws.stop()
     
 if __name__ == '__main__':
     main()

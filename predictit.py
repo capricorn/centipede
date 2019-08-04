@@ -67,6 +67,7 @@ class PredictItAPI():
         resp = requests.get('https://www.predictit.org/signalr/negotiate', params=params)
         return resp.json()
 
+    # Should be async
     def _trade(self, contract_id, price, vol, trade_type):
         data = {
             'quantity': vol,
@@ -87,6 +88,14 @@ class PredictItAPI():
 
     def buy(self, contract_id, price, vol):
         return self._trade(contract_id, price, vol, PredictItAPI.TRADE_TYPE_BUY)
+
+    def cancel(self, offer_id):
+        headers = {
+            'Authorization': f'Bearer {self.token}'
+        }
+
+        resp = requests.post(f'https://www.predictit.org/api/Trade/CancelOffer/{offer_id}')
+        return resp.status_code == 200
 
     def get_contract_portfolio(self, contract_id):
         headers = {

@@ -83,6 +83,9 @@ class PredictItWebSocket():
         self.queue = None
         self.queue_callback = None
         self.feeds = None
+        self.ws_token = ''
+        self.start_time = 0
+        self.p = None
 
     def subscribe_contract_orderbook(self, contract_id):
         pass
@@ -97,14 +100,11 @@ class PredictItWebSocket():
         pass
 
     async def connect_status_feed(self):
-        p = pi.PredictItAPI(0).create(*load_auth())
-        ws_token = p.negotiate_ws()['ConnectionToken']
-
         params = {
             'transport': 'webSockets',
             'clientProtocol': 1.5,
-            'bearer': p.token,
-            'connectionToken': ws_token,
+            'bearer': self.p.token,
+            'connectionToken': self.ws_token,
             'connectionData': '[{"name":"markethub"}]',
             'tid': 9
         }
@@ -160,15 +160,51 @@ class PredictItWebSocket():
     def set_queue_callback(self, callback):
         self.queue_callback = callback
 
+    async def ping(self):
+        while True:
+            await asyncio.sleep(60 * 5)
+            self.start_time += 1
+            #logging.info(f'Sending ping: {self.start_time}')
+            params = {
+                'bearer': self.p.token,
+                '_': self.start_time
+            }
+            requests.get('https://www.predictit.org/signalr/ping', params=params)
+
     async def _run_queue(self):
         while True:
             data = await self.queue.get()
             if self.queue_callback:
                 await self.queue_callback(data)
 
+    '''
+    def _get_connection_token(self):
+        p = pi.PredictItAPI(0).create(*load_auth())
+        return p.negotiate_ws()['ConnectionToken']
+    '''
+
+    def _send_start_request(self):
+        start = int(time.time())
+        params = {
+            'transport': 'webSockets',
+            'clientProtocol': 1.5,
+            'bearer': self.p.token,
+            'connectionToken': self.ws_token,
+            'connectionData': '[{"name":"markethub"}]',
+            '_': start
+        }
+
+        resp = requests.get('https://www.predictit.org/signalr/start', params=params)
+        print(resp.text)
+        return start
+
     async def start(self):
+        self.p = pi.PredictItAPI(0).create(*load_auth())
+        self.ws_token = self.p.negotiate_ws()['ConnectionToken']
+        self.start_time = self._send_start_request()
         self.queue = asyncio.Queue()
-        self.feeds = asyncio.gather(self.connect_trade_feed(), self.connect_status_feed(), self._run_queue())
+        self.feeds = asyncio.gather(self.connect_trade_feed(), self.connect_status_feed(), 
+                self._run_queue(), self.ping())
         await self.feeds
 
     def _route_trade_data(self, data):

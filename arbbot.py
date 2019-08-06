@@ -1,6 +1,7 @@
 import threading
 import time
 import asyncio
+import logging
 from random import randint
 
 import predictit as pi
@@ -19,79 +20,134 @@ class ArbBot():
         self.state_lock = asyncio.Lock()
         self.p = pi.PredictItAPI(0).create(*load_auth())
         self.contract_id = contract_id
-        self.position = (0, 0)
+        # our current market position, price and quantity
+        self.position = (0,0)
+        self.strike_price = 0
+        # tracks the shares we own, and the price we paid for them
+        self.portfolio = (0,0)
+        self.trade_id = 0
 
-    async def _handle_wait_for_arb(self, orderbook):
-        async with self.state_lock:
-            self.state = ArbBot.STATE_WAIT_FOR_ARB
+    def _handle_wait_for_arb(self, orderbook):
+        #async with self.state_lock:
+        self.state = ArbBot.STATE_WAIT_FOR_ARB
 
         best_ask = orderbook.asks[0][0]
         best_bid = orderbook.bids[0][0]
-        print(f'best ask: {best_ask}, best bid: {best_bid}')
+        logging.info(f'best ask: {best_ask}, best bid: {best_bid}')
         if best_ask - best_bid >= 3:
-            print(f'hit arb opportunity: a:{best_ask}, b: {best_bid}')
+            logging.info(f'Hit arb opportunity: a: {best_ask}, b: {best_bid}')
             vol = 15
-            self.buy_position = (best_bid+1, vol)
-            self.sell_position = (best_ask-1, vol)
-            await self.buy_shares((best_bid+1, vol))
+            self.position = (best_bid+1, vol)
+            #self.sell_position = (best_ask-1, vol)
+            self.strike_price = best_ask-1
+            resp = self.buy_shares((best_bid+1, vol))
+            self.trade_id = resp['offer']['offerId']
             
-    async def _handle_waiting_for_purchase(self, buy_trade, sell_trade):
-        pass
+    # Needs knowledge of our current position (and contract portfolio)
+    # Uncertain whether a state is necessary for this; we either cancel
+    # immediately, and hence our position is reset, or we cancel and sell
+    # our purchased shares, which results in a WAITING_ON_SALE state 
+    def _handle_cancel_purchase(self, orderbook_event):
+        #async with self.state_lock: 
+        self.state = ArbBot.STATE_CANCEL_PURCHASE
+
+        # Cancel our outstanding order, and then liquidate any purchased shares
+        logging.info(f'Cancelling offer: {self.trade_id}')
+        self.p.cancel(self.trade_id)
+        self.position = (0,0)
+
+        # List our remaining shares at the best ask price
+        price, quantity = self.portfolio 
+        if quantity > 0:
+            sale = (orderbook_event.asks[0][0], quantity)
+            logging.info(f'Selling remaining portfolio: {sale}')
+            self.sell_shares(sale)
+        else:
+            self.state = ArbBot.STATE_WAIT_FOR_ARB
+
+    # Handle the orderbook while waiting for a purchase to occur
+    # May want to check if our buy order is even open still
+    def _handle_waiting_for_purchase(self, orderbook_event):
+        #async with self.state_lock:
+        self.state = ArbBot.STATE_WAITING_FOR_PURCHASE
+        # We have open buy orders; possibly some have succeeded, but not all.
+        # If the arb opportunity still exists, then everything is ok. We'll just hold
+        # the position. Otherwise, it's time to change our position or begin liquidating.
+        best_ask, best_ask_quantity = orderbook_event.asks[0]
+        best_bid, best_bid_quantity = orderbook_event.bids[0]
+        offer, quantity = self.position
+
+        bid_distance = best_bid - offer
+
+        # Maybe look into cumulative volume above us in orderbook, rather than just the
+        # best one.
+        if bid_distance > 0 and best_bid_quantity > 50:
+            logging.info('Cancelling position')
+            self._handle_cancel_purchase(orderbook_event)
 
     # I think a queueing system may be necessary to maintain order and make sure things
     # happen in a timely manner
-    async def handle_orderbook_change(self, orderbook_event):
-        # Example of checking state
+    def handle_orderbook_change(self, orderbook_event):
         if self.state == ArbBot.STATE_WAIT_FOR_ARB:
-            print('Waiting for arb')
-            await self._handle_wait_for_arb(orderbook_event)
-            # Make a purchase if arb exists
+            logging.info('Waiting for arb')
+            self._handle_wait_for_arb(orderbook_event)
         elif self.state == ArbBot.STATE_WAITING_FOR_PURCHASE:
-            print('waiting for purchase')
+            logging.info('Waiting for purchase')
+            self._handle_waiting_for_purchase(orderbook_event)
         elif self.state == ArbBot.STATE_WAITING_FOR_SALE:
-            print('waiting for sale')
+            # Adjust position if necessary
+            logging.info('Waiting for sale')
+
+    def _handle_waiting_for_sale(self, orderbook_event):
+        pass
 
     # Log in orderbook
-    async def buy_shares(self, buy_order):
+    def buy_shares(self, buy_order):
         '''Purchase shares on predictit according to buy_order,
         and list at strike_price.
         '''
-        async with self.state_lock:
-            self.state = ArbBot.STATE_WAITING_FOR_PURCHASE
+        #async with self.state_lock:
+        self.state = ArbBot.STATE_WAITING_FOR_PURCHASE
 
-        print(f'submitted order: {buy_order}')
+        logging.info(f'Submitted order: {buy_order}')
         # Ideally, this would be async
-        resp = self.p.buy(self.contract_id, *buy_order)
+        return self.p.buy(self.contract_id, *buy_order)
 
-    async def sell_shares(self, sell_order):
-        async with self.state_lock:
-            self.state = ArbBot.STATE_WAITING_FOR_SALE
+    def sell_shares(self, sell_order):
+        #async with self.state_lock:
+        self.state = ArbBot.STATE_WAITING_FOR_SALE
 
-        print('Selling shares!')
+        logging.info('Selling shares')
         resp = self.p.sell(self.contract_id, *sell_order)
+        return resp
 
-    async def handle_contract_update(self, update):
-        async with self.state_lock:
-            if self.state == ArbBot.STATE_WAITING_FOR_PURCHASE and self.contract_id == update.contract_id:
-                if update.open_buy_orders == 0:
-                    print('Finally bought shares!')
-                    await self.sell_shares(self.sell_position)
-                else:
-                    print(f'Still waiting on: {update.open_buy_orders}')
-            elif self.state == ArbBot.STATE_WAITING_FOR_SALE and self.contract_id == update.contract_id:
-                if update.open_sell_orders == 0:
-                    print('Finally sold shares!')
-                    self.state = ArbBot.STATE_WAIT_FOR_ARB
-                else:
-                    print(f'Still waiting for {update.open_sell_orders} to sell.')
+    def handle_contract_update(self, update):
+        if self.state == ArbBot.STATE_WAITING_FOR_PURCHASE and self.contract_id == update.contract_id:
+            if update.open_buy_orders == 0:
+                # Update portfolio here
+                logging.info('Finished buying shares')
+                self.sell_shares((self.strike_price, self.portfolio[1]))
+            else:
+                self.portfolio = ((self.position[0] - update.open_buy_orders), self.position[1])
+                logging.info(f'Still waiting on: {update.open_buy_orders}')
+        elif self.state == ArbBot.STATE_WAITING_FOR_SALE and self.contract_id == update.contract_id:
+            if update.open_sell_orders == 0:
+                # Update portfolio here
+                logging.info('Finished selling shares')
+                self.portfolio = (0,0)
+                self.state = ArbBot.STATE_WAIT_FOR_ARB
+            else:
+                self.portfolio = (update.open_sell_orders, self.portfolio[1])
+                logging.info(f'Still waiting for {update.open_sell_orders} to sell.')
 
     async def handle_event(self, event):
         if type(event) == piws.OrderbookEvent:
-            print('Orderbook event!')
-            await self.handle_orderbook_change(event)
+            logging.info('Orderbook event!')
+            self.handle_orderbook_change(event)
         elif type(event) == piws.ContractOwnershipUpdateEvent:
-            print('Ownership update!')
-            await self.handle_contract_update(event)
+            logging.info('Ownership update event!')
+            self.handle_contract_update(event)
+        await asyncio.sleep(.05)
 
 def load_auth():
     with open('auth.txt', 'r') as f:
@@ -105,6 +161,8 @@ async def queue_cb(data):
         print(data)
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
+    logging.info('Starting up..')
     ws = piws.PredictItWebSocket()
     bot = ArbBot('16684')
     ws.set_queue_callback(bot.handle_event)
@@ -112,7 +170,8 @@ def main():
     try:
         asyncio.run(ws.start())
     except KeyboardInterrupt:
-        print('\nBye.')
+        print('')
+        logging.info('Bye.')
         ws.stop()
     
 if __name__ == '__main__':

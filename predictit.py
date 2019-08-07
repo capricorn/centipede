@@ -94,7 +94,7 @@ class PredictItAPI():
             'Authorization': f'Bearer {self.token}'
         }
 
-        resp = requests.post(f'https://www.predictit.org/api/Trade/CancelOffer/{offer_id}')
+        resp = requests.post(f'https://www.predictit.org/api/Trade/CancelOffer/{offer_id}', headers=headers)
         return resp.status_code == 200
 
     def get_contract_portfolio(self, contract_id):

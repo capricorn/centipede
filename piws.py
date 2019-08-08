@@ -12,6 +12,50 @@ import predictit as pi
 TRADE_TYPE_BUY = 1
 TRADE_TYPE_SELL = 3
 
+class ContractStatsEvent():
+    def __init__(self):
+        self.best_no_price = 0
+        self.best_yes_price = 0
+        self.contract_id = ''
+        self.date_updated = ''
+        self.last_close_price = 0
+        self.last_trade_price = 0
+        self.timestamp = ''
+
+    def __str__(self):
+        return \
+            f'best no price: {self.best_no_price}\n' \
+            f'best yes price: {self.best_yes_price}\n' \
+            f'contract id: {self.contract_id}\n' \
+            f'date updated: {self.date_updated}\n' \
+            f'last_close_price: {self.last_close_price}\n' \
+            f'last_trade_price: {self.last_trade_price}\n' \
+            f'timestamp: {self.timestamp}\n'
+
+    class ContractStatsDecoder(json.JSONDecoder):
+        def __init__(self, *args, **kwargs):
+            self.stats_event = ContractStatsEvent()
+            json.JSONDecoder.__init__(self, object_hook=self.hook, *args, **kwargs)
+
+        def hook(self, data):
+            #print(data)
+            if 'BestNoPrice' in data:
+                self.stats_event.best_no_price = data['BestNoPrice']
+            if 'BestYesPrice' in data:
+                self.stats_event.best_yes_price = data['BestYesPrice']
+            if 'ContractId' in data:
+                self.stats_event.contract_id = str(data['ContractId'])
+            if 'DateUpdated' in data:
+                self.stats_event.date_updated = data['DateUpdated']
+            if 'LastClosePrice' in data:
+                self.stats_event.last_close_price = data['LastClosePrice']
+            if 'LastTradePrice' in data:
+                self.stats_event.last_trade_price = data['LastTradePrice']
+            if 'TimeStamp' in data:
+                self.stats_event.timestamp = data['TimeStamp']
+
+            return self.stats_event
+
 # This is actually a trade event, not a status event 
 class OrderbookEvent():
     def __init__(self):
@@ -86,6 +130,9 @@ class PredictItWebSocket():
         self.ws_token = ''
         self.start_time = 0
         self.p = None
+        self.contract = None
+        self.req_count = 1
+        self.contract_filter = None
 
     def subscribe_contract_orderbook(self, contract_id):
         pass
@@ -132,6 +179,11 @@ class PredictItWebSocket():
                             cls=ContractOwnershipUpdateEvent.ContractOwnershipUpdateEventDecoder)
         return msg
 
+    # Return a function that takes a request count
+    async def send_trade_feed_message(self, ws, msg):
+        await ws.send(msg(self.req_count))
+        self.req_count += 1
+
     async def connect_trade_feed(self):
         params = {
             'v': 5,
@@ -147,15 +199,18 @@ class PredictItWebSocket():
 
         async with websockets.connect(url) as ws:
             await ws.recv()
-            await ws.send(json.dumps({"t":"d","d":{"r":1,"a":"s","b":{"c":{"sdk.js.4-9-1":1}}}}))
-            await ws.send(json.dumps({"t":"d","d":{"r":2,"a":"q","b":{"p":"/marketStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":1,"h":""}}}))
-            # Have to subscribe to contract stats first?
-            await ws.send(json.dumps({"t":"d","d":{"r":3,"a":"q","b":{"p":"/contractStats","q":{"sp":str(time.time()),"i":"TimeStamp"},"t":2,"h":""}}}))
-            await ws.send(subscribe_contract_orderbook_msg('16684', 4))
+            await self.send_trade_feed_message(ws, self._init_sdk_msg())
+            await self.send_trade_feed_message(ws, self._subscribe_market_stats_msg())
+            await self.send_trade_feed_message(ws, self._subscribe_contract_stats_msg())
+            if self.contract:
+                await self.send_trade_feed_message(ws, self._subscribe_contract_orderbook_msg(self.contract))
             
             while True:
                 data = await ws.recv()
-                await self.queue.put(self._route_trade_data(data))
+                event = self._route_trade_data(data)
+                if self.contract_filter and type(event) == ContractStatsEvent and self.contract_filter(event.contract_id):
+                    continue
+                await self.queue.put(event)
 
     def set_queue_callback(self, callback):
         self.queue_callback = callback
@@ -198,6 +253,14 @@ class PredictItWebSocket():
         print(resp.text)
         return start
 
+    # Takes a filter function of the form [ contract_id: str ] -> bool
+    def set_contract_stats_filter(self, contract_filter):
+        self.contract_filter = contract_filter
+    '''
+    def init_contract(self, contract):
+        self.contract = contract
+    '''
+
     async def start(self):
         self.p = pi.PredictItAPI(0).create(*load_auth())
         self.ws_token = self.p.negotiate_ws()['ConnectionToken']
@@ -215,29 +278,87 @@ class PredictItWebSocket():
             if msg.startswith('contractOrderBook'):
                 event = json.loads(str(data).replace("'", '"') , cls=OrderbookEvent.OrderbookEventDecoder)
                 return event
+            if msg.startswith('contractStats'):
+                return json.loads(str(data).replace("'", '"'), cls=ContractStatsEvent.ContractStatsDecoder)
         return data
 
     def stop(self):
         self.feeds.cancel()
 
-def subscribe_market_stats_msg(req_cnt):
-    pass
+    def _subscribe_market_stats_msg(self):
+        def f(req_cnt):
+            return json.dumps({
+                "t": "d",
+                "d": {
+                    "r": f'{req_cnt}',
+                    "a": "q",
+                    "b": {
+                        "p": "/marketStats",
+                        "q": {
+                            "sp": str(time.time()),
+                            "i": "TimeStamp"
+                        },
+                        "t": 1,
+                        "h": ""
+                    }
+                }
+            })
+        return f
 
-def subscribe_contract_stats_msg(req_cnt):
-    pass
+    def _subscribe_contract_stats_msg(self):
+        def f(req_cnt):
+            return json.dumps({
+                "t": "d",
+                "d": {
+                    "r": f'{req_cnt}',
+                    "a": "q",
+                    "b": {
+                        "p": "/contractStats",
+                        "q": {
+                            "sp": str(time.time()),
+                            "i": "TimeStamp"
+                        },
+                        "t": 2,
+                        "h": ""
+                    }
+                }
+            })
+        return f
 
-def subscribe_contract_orderbook_msg(contract_id, req_cnt):
-    return json.dumps({
-        't': 'd',
-        'd': {
-            'r': f'{req_cnt}',
-            'a': 'q',   # changes to n when closing subscription
-            'b': {
-                'p': f'/contractOrderBook/{contract_id}',
-                'h': '' # h removed when closing subscription
-            }
-        }
-    })
+    def _subscribe_contract_orderbook_msg(self, contract_id):
+        def f(req_cnt):
+            return json.dumps({
+                't': 'd',
+                'd': {
+                    'r': f'{req_cnt}',
+                    'a': 'q',   # changes to n when closing subscription
+                    'b': {
+                        'p': f'/contractOrderBook/{contract_id}',
+                        'h': '' # h removed when closing subscription
+                    }
+                }
+            })
+        return f
+
+    # Still unsure if this is even necessary to send
+    def _init_sdk_msg(self):
+        def f(req_cnt):
+            return json.dumps({
+                "t": "d",
+                "d": {
+                    "r": f'{req_cnt}',
+                    "a": "s",
+                    "b": {
+                        "c": {
+                            "sdk.js.4-9-1": 1
+                        }
+                    }
+                }
+            })
+        return f
+
+    def init_contract(self, contract_id):
+        self.contract = contract_id
 
 def load_auth():
     with open('auth.txt', 'r') as f:

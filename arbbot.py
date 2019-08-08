@@ -2,6 +2,7 @@ import threading
 import time
 import asyncio
 import logging
+import sys
 from random import randint
 
 import predictit as pi
@@ -42,18 +43,39 @@ class ArbBot():
             self.strike_price = best_ask-1
             resp = self.buy_shares((best_bid+1, vol))
             self.trade_id = resp['offer']['offerId']
+
+    # Adjust the sale, either to a different price level, or by liquidating our position
+    def _handle_cancel_sale(self, orderbook_event):
+        #self.state = ArbBot.STATE_CANCEL_SALE
+
+        best_ask_price, best_ask_quantity = orderbook_event.asks[0]
+        best_bid_price, best_bid_quantity = orderbook_event.bids[0]
+        logging.info(f'Cancelling and adjusting sale: {(self.strike_price, self.position[1])}')
+        # Need to make sure that the trade_id is set correctly after selling
+        logging.info(f'Cancelled: {self.p.cancel(self.trade_id)}')
+        if best_ask_quantity <= 25:
+            self.position = ((best_ask_price, self.position[1]))
+            logging.info(f'Sold at new position: {self.position}')
+        else:
+            # Liquidate
+            # Need to split among all price levels in the future. For now, list at best buy price
+            self.position = (best_bid_price, self.position[1])
+            logging.info(f'Liquidated shares at position: {self.position}')
+
+        self.sell_shares(self.position)
+        self.state = ArbBot.WAITING_FOR_SALE
             
     # Needs knowledge of our current position (and contract portfolio)
     # Uncertain whether a state is necessary for this; we either cancel
     # immediately, and hence our position is reset, or we cancel and sell
-    # our purchased shares, which results in a WAITING_ON_SALE state 
+    # our purchased shares, which results in a WAITING_FOR_SALE state 
     def _handle_cancel_purchase(self, orderbook_event):
         #async with self.state_lock: 
         self.state = ArbBot.STATE_CANCEL_PURCHASE
 
         # Cancel our outstanding order, and then liquidate any purchased shares
         logging.info(f'Cancelling offer: {self.trade_id}')
-        self.p.cancel(self.trade_id)
+        logging.info(f'Order cancelled: {self.p.cancel(self.trade_id)}')
         self.position = (0,0)
 
         # List our remaining shares at the best ask price
@@ -97,9 +119,20 @@ class ArbBot():
         elif self.state == ArbBot.STATE_WAITING_FOR_SALE:
             # Adjust position if necessary
             logging.info('Waiting for sale')
+            self._handle_waiting_for_sale(orderbook_event)
 
+    # Liquidate asset or change price, depending on position ahead of us 
     def _handle_waiting_for_sale(self, orderbook_event):
-        pass
+        self.state = ArbBot.WAITING_FOR_SALE
+        logging.info('Waiting for sale')
+        best_ask_price, best_ask_quantity = orderbook_event.asks[0]
+        dist = self.strike_price - best_ask_price
+
+        if dist > 0:
+            quantity = sum(map(lambda k: k[1], orderbook_event.asks[:dist]))
+            if quantity > 150:
+                logging.info('Modifying sell order')
+                self._handle_cancel_sale(orderbook_event)
 
     # Log in orderbook
     def buy_shares(self, buy_order):
@@ -126,7 +159,7 @@ class ArbBot():
             if update.open_buy_orders == 0:
                 # Update portfolio here
                 logging.info('Finished buying shares')
-                self.sell_shares((self.strike_price, self.portfolio[1]))
+                self.trade_id = self.sell_shares((self.strike_price, self.portfolio[1]))['offer']['offerId']
             else:
                 self.portfolio = ((self.position[0] - update.open_buy_orders), self.position[1])
                 logging.info(f'Still waiting on: {update.open_buy_orders}')
@@ -135,6 +168,7 @@ class ArbBot():
                 # Update portfolio here
                 logging.info('Finished selling shares')
                 self.portfolio = (0,0)
+                self.position = (0,0)
                 self.state = ArbBot.STATE_WAIT_FOR_ARB
             else:
                 self.portfolio = (update.open_sell_orders, self.portfolio[1])
@@ -161,10 +195,16 @@ async def queue_cb(data):
         print(data)
 
 def main():
+    contract_id = ''
+    if len(sys.argv) != 2:
+        print('Argument required: contract_id')
+        return
+    contract_id = sys.argv[1]
     logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
     logging.info('Starting up..')
     ws = piws.PredictItWebSocket()
-    bot = ArbBot('16684')
+    ws.init_contract(contract_id)
+    bot = ArbBot(contract_id)
     ws.set_queue_callback(bot.handle_event)
     #ws.set_queue_callback(queue_cb)
     try:

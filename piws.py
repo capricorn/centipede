@@ -218,20 +218,25 @@ class PredictItWebSocket():
         self.contract_filter = None
         self.market_filter = None
         self.contracts = None
+        self.trade_feed_ws = None
+        self.status_feed_ws = None
+        self.trade_feed_init_msgs = []
+        self.status_feed_init_msgs = []
 
     def subscribe_contract_orderbook(self, contract_id):
-        pass
+        self.trade_feed_init_msgs.append(self._subscribe_contract_orderbook_msg(self.contract))
 
-    def unsubscribe_contract_orderbook(self, contract_id):
-        pass
+    def subscribe_market_status(self):
+        self.trade_feed_init_msgs.append(self._subscribe_market_stats_msg())
 
-    def subscribe_markets_status(self):
-        pass
+    def subscribe_contract_status(self):
+        self.trade_feed_init_msgs.append(self._subscribe_contract_stats_msg())
 
-    def subscribe_contracts_status(self):
-        pass
+    async def connect(self):
+        self.trade_feed_ws = await self._connect_trade_feed()
+        self.status_feed_ws = await self._connect_status_feed()
 
-    async def connect_status_feed(self):
+    async def _connect_status_feed(self):
         params = {
             'transport': 'webSockets',
             'clientProtocol': 1.5,
@@ -243,10 +248,12 @@ class PredictItWebSocket():
 
         req = requests.Request('GET', 'https://www.predictit.org/signalr/connect', params=params).prepare()
         url = 'wss://' + req.url[8:]
-        ws = await websockets.connect(url, ping_interval=None)
+        return await websockets.connect(url, ping_interval=None)
+
+    async def run_status_feed(self):
         while True:
             try:
-                data = await ws.recv()
+                data = await self.status_feed_ws.recv()
                 data = json.loads(data)
                 await self.queue.put(self._parse_status_feed(data))
             except websockets.ConnectionClosed:
@@ -271,25 +278,17 @@ class PredictItWebSocket():
                             cls=ContractOwnershipUpdateEvent.ContractOwnershipUpdateEventDecoder)
         return msg
 
-    # Return a function that takes a request count
-    async def send_trade_feed_message(self, ws, msg):
-        await ws.send(msg(self.req_count))
+    async def send_trade_feed_message(self, msg):
+        await self.trade_feed_ws.send(msg(self.req_count))
         self.req_count += 1
 
-    async def _init_trade_feed(self, ws):
-        await ws.recv()
-        await self.send_trade_feed_message(ws, self._init_sdk_msg())
-        await self.send_trade_feed_message(ws, self._subscribe_market_stats_msg())
-        await self.send_trade_feed_message(ws, self._subscribe_contract_stats_msg())
+    async def _init_trade_feed(self):
+        await self.send_trade_feed_message(self._init_sdk_msg())
 
-        if self.contract:
-            await self.send_trade_feed_message(ws, self._subscribe_contract_orderbook_msg(self.contract))
-        # Clean up later 
-        if self.contracts:
-            for c in self.contracts:
-                await self.send_trade_feed_message(ws, self._subscribe_contract_orderbook_msg(c))
-
-    async def connect_trade_feed(self):
+        for msg in self.trade_feed_init_msgs:
+            await self.send_trade_feed_message(msg)
+        
+    async def _connect_trade_feed(self):
         params = {
             'v': 5,
             'ns': 'predictit-f497e'
@@ -302,13 +301,14 @@ class PredictItWebSocket():
         req = requests.Request('GET', 'https://s-usc1c-nss-202.firebaseio.com/.ws', params=params).prepare()
         url = 'wss://' + req.url[8:]
 
-        #async with websockets.connect(url, ping_interval=None) as ws:
-        ws = await websockets.connect(url, ping_interval=None)
-        await self._init_trade_feed(ws)
+        return await websockets.connect(url, ping_interval=None)
+
+    async def run_trade_feed(self):
+        await self._init_trade_feed()
         
         while True:
             try:
-                data = await ws.recv()
+                data = await self.trade_feed_ws.recv()
                 event = self._route_trade_data(data)
                 if self.contract_filter and type(event) == ContractStatsEvent and self.contract_filter(event.contract_id):
                     continue
@@ -319,9 +319,6 @@ class PredictItWebSocket():
                 logging.warning('Lost connection to trade feed.')
                 self.feeds.cancel()
                 break
-                #ws = await websockets.connect(url, ping_interval=None)
-                #await self._init_trade_feed(ws)
-                #logging.info('Reconnected to trade feed!')
 
     def set_queue_callback(self, callback):
         self.queue_callback = callback
@@ -329,15 +326,12 @@ class PredictItWebSocket():
     async def ping(self):
         while True:
             self.start_time += 1
-            #logging.info(f'Sending ping: {self.start_time}')
-            print(f'Sending ping: {self.start_time}')
+            logging.info(f'Sending ping: {self.start_time}')
             params = {
                 'bearer': self.p.token,
                 '_': self.start_time
             }
             resp = requests.get('https://www.predictit.org/signalr/ping', params=params)
-            #logging.info(f'ping response: {resp.status_code}')
-            print(f'ping response: {resp.status_code}')
             await asyncio.sleep(60 * 5)
 
     async def _run_queue(self):
@@ -345,12 +339,6 @@ class PredictItWebSocket():
             data = await self.queue.get()
             if self.queue_callback:
                 await self.queue_callback(data)
-
-    '''
-    def _get_connection_token(self):
-        p = pi.PredictItAPI(0).create(*load_auth())
-        return p.negotiate_ws()['ConnectionToken']
-    '''
 
     def _send_start_request(self):
         start = int(time.time())
@@ -364,23 +352,20 @@ class PredictItWebSocket():
         }
 
         resp = requests.get('https://www.predictit.org/signalr/start', params=params)
-        print(resp.text)
         return start
 
     # Takes a filter function of the form [ contract_id: str ] -> bool
     def set_contract_stats_filter(self, contract_filter):
         self.contract_filter = contract_filter
-    '''
-    def init_contract(self, contract):
-        self.contract = contract
-    '''
 
     async def start(self):
         self.p = pi.PredictItAPI(0).create(*load_auth())
         self.ws_token = self.p.negotiate_ws()['ConnectionToken']
         self.start_time = self._send_start_request()
         self.queue = asyncio.Queue()
-        self.feeds = asyncio.gather(self.connect_trade_feed(), self.connect_status_feed(), 
+
+        await self.connect()
+        self.feeds = asyncio.gather(self.run_trade_feed(), self.run_status_feed(), 
                 self._run_queue(), self.ping())
         try:
             await self.feeds

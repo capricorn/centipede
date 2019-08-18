@@ -222,6 +222,7 @@ class PredictItWebSocket():
         self.status_feed_ws = None
         self.trade_feed_init_msgs = []
         self.status_feed_init_msgs = []
+        self.logger = logging.getLogger(__name__)
 
     def subscribe_contract_orderbook(self, contract_id):
         self.trade_feed_init_msgs.append(self._subscribe_contract_orderbook_msg(self.contract))
@@ -251,17 +252,15 @@ class PredictItWebSocket():
         return await websockets.connect(url, ping_interval=None)
 
     async def run_status_feed(self):
-        while True:
-            try:
+        try:
+            while True:
                 data = await self.status_feed_ws.recv()
                 data = json.loads(data)
                 await self.queue.put(self._parse_status_feed(data))
-            except websockets.ConnectionClosed:
-                logging.warning('Lost connection to status feed.')
-                self.feeds.cancel()
-                break
-                #ws = await websockets.connect(url, ping_interval=None)
-                #logging.info('Reconnected to status feed!')
+        except websockets.ConnectionClosed:
+            self.logger.warning('Lost connection to status feed.')
+        except asyncio.CancelledError:
+            self.logger.info('Cancelling status feed')
 
     def _parse_shares_traded_event(self, msg):
         event = SharesTradedEvent()
@@ -306,8 +305,8 @@ class PredictItWebSocket():
     async def run_trade_feed(self):
         await self._init_trade_feed()
         
-        while True:
-            try:
+        try:
+            while True:
                 data = await self.trade_feed_ws.recv()
                 event = self._route_trade_data(data)
                 if self.contract_filter and type(event) == ContractStatsEvent and self.contract_filter(event.contract_id):
@@ -315,30 +314,37 @@ class PredictItWebSocket():
                 if self.market_filter and type(event) == MarketStatsEvent and self.market_filter(event.market_id):
                     continue
                 await self.queue.put(event)
-            except websockets.ConnectionClosed:
-                logging.warning('Lost connection to trade feed.')
-                self.feeds.cancel()
-                break
+        except websockets.ConnectionClosed:
+            self.logger.warning('Lost connection to trade feed.')
+        except asyncio.CancelledError:
+            self.logger.info('Cancelling trade feed')
 
     def set_queue_callback(self, callback):
         self.queue_callback = callback
 
     async def ping(self):
-        while True:
-            self.start_time += 1
-            logging.info(f'Sending ping: {self.start_time}')
-            params = {
-                'bearer': self.p.token,
-                '_': self.start_time
-            }
-            resp = requests.get('https://www.predictit.org/signalr/ping', params=params)
-            await asyncio.sleep(60 * 5)
+        try:
+            while True:
+                self.start_time += 1
+                self.logger.info(f'Sending ping: {self.start_time}')
+                params = {
+                    'bearer': self.p.token,
+                    '_': self.start_time
+                }
+                resp = requests.get('https://www.predictit.org/signalr/ping', params=params)
+                await asyncio.sleep(60 * 5)
+        except asyncio.CancelledError:
+            self.logger.info('Cancelling ping task')
 
     async def _run_queue(self):
-        while True:
-            data = await self.queue.get()
-            if self.queue_callback:
-                await self.queue_callback(data)
+        # Maybe use executor here -- turn on asyncio self.logger to check performance
+        try:
+            while True:
+                data = await self.queue.get()
+                if self.queue_callback:
+                    await self.queue_callback(data)
+        except asyncio.CancelledError:
+            self.logger.info('Cancelling event queue')
 
     def _send_start_request(self):
         start = int(time.time())
@@ -369,10 +375,8 @@ class PredictItWebSocket():
                 self._run_queue(), self.ping())
         try:
             await self.feeds
-            logging.info('Done with feeds')
         except asyncio.CancelledError:
-            logging.info('Lost feeds, resetting')
-            time.sleep(1)
+            self.logger.info('Cancelled all feeds')
 
     def _route_trade_data(self, data):
         data = json.loads(data)
@@ -392,7 +396,9 @@ class PredictItWebSocket():
         self.market_filter = mfilter
 
     def stop(self):
-        self.feeds.cancel()
+        self.logger.info('Closing feeds')
+        self.trade_feed_ws.close()
+        self.status_feed_ws.close()
 
     def _subscribe_market_stats_msg(self):
         def f(req_cnt):

@@ -1,0 +1,26 @@
+digraph {
+    WAIT_FOR_ARB [shape=box];
+    WAIT_FOR_PURCHASE [shape=box];
+    CANCEL_SALE [shape=box];
+    WAIT_FOR_SALE [shape=box];
+    CANCEL_PURCHASE [shape=box];
+    STOP_LOSS [shape=box];
+
+    WAIT_FOR_ARB -> WAIT_FOR_ARB [label="no arb"];
+    WAIT_FOR_ARB -> WAIT_FOR_PURCHASE [label="arb found"];
+
+    WAIT_FOR_PURCHASE -> WAIT_FOR_PURCHASE [label="awaiting purchase"];
+    WAIT_FOR_PURCHASE -> CANCEL_PURCHASE [label="arb gone"];
+    WAIT_FOR_PURCHASE -> WAIT_FOR_SALE [label="bought shares"];
+
+    CANCEL_PURCHASE -> CANCEL_PURCHASE [label="awaiting cancel"];
+    CANCEL_PURCHASE -> WAIT_FOR_ARB [label="find another arb"];
+    CANCEL_PURCHASE -> STOP_LOSS [label="break even or losing money"];
+
+    WAIT_FOR_SALE -> WAIT_FOR_SALE [label="awaiting sale"];
+    WAIT_FOR_SALE -> CANCEL_SALE [label="arb gone"];
+    WAIT_FOR_SALE -> WAIT_FOR_ARB [label="sold shares"];
+
+    STOP_LOSS -> STOP_LOSS [label="awaiting sale"]
+    STOP_LOSS -> WAIT_FOR_ARB [label="sold shares"]
+}

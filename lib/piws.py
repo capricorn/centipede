@@ -145,6 +145,7 @@ class OrderbookEvent():
         self.bids = []
         self.asks = []
         self.contract_id = 0
+        self.timestamp = ''
 
     def __str__(self):
         return f'contract: {self.contract_id}\n' \
@@ -164,9 +165,11 @@ class OrderbookEvent():
                 elif data['tradeType'] == 0:  # May be wrong
                     self.ob_event.asks.append((int(data['costPerShareYes']*100), data['quantity']))
                     return self.ob_event
-            elif 'p' in data and data['p'].startswith('contractOrderBook'):
+            if 'p' in data and data['p'].startswith('contractOrderBook'):
                 # structure of data['p'] = 'contractOrderBook/\d+'
                 self.ob_event.contract_id = data['p'][data['p'].index('/')+1:]
+            if 'timestamp' in data:
+                self.ob_event.timestamp = data['timestamp']
 
             return self.ob_event 
 
@@ -225,7 +228,7 @@ class PredictItWebSocket():
         self.logger = logging.getLogger(__name__)
 
     def subscribe_contract_orderbook(self, contract_id):
-        self.trade_feed_init_msgs.append(self._subscribe_contract_orderbook_msg(self.contract))
+        self.trade_feed_init_msgs.append(self._subscribe_contract_orderbook_msg(contract_id))
 
     def subscribe_market_status(self):
         self.trade_feed_init_msgs.append(self._subscribe_market_stats_msg())

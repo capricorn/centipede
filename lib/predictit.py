@@ -26,8 +26,9 @@ class Market():
 # Shouldn't require a market to create it
 # Phase out
 class PredictItAPI():
+    TRADE_TYPE_BUY_NO = 0
     TRADE_TYPE_BUY = 1
-    TRADE_TYPE_SELL = 3
+    TRADE_TYPE_SELL = 3  # Must be for only selling Yes
 
     def __init__(self, market_id, token=''):
         self.token = token
@@ -88,6 +89,9 @@ class PredictItAPI():
 
     def buy(self, contract_id, price, vol):
         return self._trade(contract_id, price, vol, PredictItAPI.TRADE_TYPE_BUY)
+
+    def buy_no(self, contract_id, price, vol):
+        return self._trade(contract_id, price, vol, PredictItAPI.TRADE_TYPE_BUY_NO)
 
     def cancel(self, offer_id):
         headers = {

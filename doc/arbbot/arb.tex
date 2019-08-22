@@ -1,0 +1,71 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+
+\title{pi arb strats}
+\author{cap}
+
+\begin{document}
+\maketitle
+
+The book is modelled like so:
+\begin{align*}
+\text{bids} &= \{ (b_1, q_1), ..., (b_n, q_n) \}\\
+\text{asks} &= \{ (a_1, q_1), ..., (a_n, q_n) \}
+\end{align*}
+
+$bids$ and $asks$ are totally ordered over $>$, and 
+\begin{align*}
+    b_i - b_{i+1} &\geq 1\\
+    a_i - a_{i+1} &\geq 1
+\end{align*}
+
+For a book with $n$ price levels, the top of the book is at index $1$, and the bottom of the book at $n$.
+The total quantity of shares up to and including a price level $k$ for bids and asks is
+\begin{align*}
+Q_b(k) &= \sum_{i=1}^{k} q_i\\
+Q_a(k) &= \sum_{i=1}^{k} q_i
+\end{align*}
+
+\section*{Current Strategy}
+
+For the time being, this strategy has constants for deciding what quantities to purchase, and what
+levels to sell or liquidate at. Hopefully this is improved in the future to account for other factors.
+
+\subsection*{Placing bids}
+
+% Our notation could probably be improved here
+First, find the price level $k$ such that
+\begin{equation}
+    Q_b(k) \leq 100 \wedge (Q_b(k) \geq (Q_b(i) \leq 100))
+\end{equation}
+
+Now the bids we're interested in are
+$$
+B = \{ (b_1, q_1), ..., (b_k, q_k) \}
+$$
+
+If $ B = \emptyset $, then the only option is to place a bid at $b_1 + 1$ (if an arb opportunity exists).
+Otherwise, examine the bottom index $k$. If $b_k - b_{k+1} > 1$, then place the order at $b_{k+1}+1$.
+
+\subsection*{Adjusting bid}
+
+Everytime an orderbook change occurs, the arb position needs re-evaluated. If the arb opportunity is lost,
+cancel the order and liquidate the remainder at $b_1$. Optionally, adjust our sell price if more profit
+can be made.
+Otherwise, calculate $Q_k$ again. If $k$ changed,
+verify an arb opportunity exists, and adjust the order. Hold any shares that were already purchased.
+
+\subsection*{Placing asks}
+
+\subsection*{Adjusting asks}
+
+\subsection*{Arb opportunities}
+
+An arb opportunity exists if:
+\begin{align*}
+a_1 - b_k &== 1 \wedge aq_1 \leq 25\\
+a_1 - b_k &> 1\\
+\end{align*}
+
+\end{document}

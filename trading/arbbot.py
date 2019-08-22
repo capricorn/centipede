@@ -63,7 +63,7 @@ class ArbBot():
             logging.info(f'Liquidated shares at position: {self.position}')
 
         self.sell_shares(self.position)
-        self.state = ArbBot.WAITING_FOR_SALE
+        self.state = ArbBot.STATE_WAITING_FOR_SALE
             
     # Needs knowledge of our current position (and contract portfolio)
     # Uncertain whether a state is necessary for this; we either cancel
@@ -95,16 +95,25 @@ class ArbBot():
         # We have open buy orders; possibly some have succeeded, but not all.
         # If the arb opportunity still exists, then everything is ok. We'll just hold
         # the position. Otherwise, it's time to change our position or begin liquidating.
+        bids = orderbook_event.bids
+        bid_prices = list(map(lambda k: k[0], bids))
         best_ask, best_ask_quantity = orderbook_event.asks[0]
         best_bid, best_bid_quantity = orderbook_event.bids[0]
         offer, quantity = self.position
 
-        bid_distance = best_bid - offer
+        # Two different measures I suppose of bid distance
+        # One is the price difference, and the other is the level difference
+        #bid_distance = best_bid - offer
+        offer_idx = bid_prices.index(offer)   # If it isn't 0, we're not on top of the book
+
+        # Need to make an adjustment if:
 
         # Maybe look into cumulative volume above us in orderbook, rather than just the
         # best one.
-        if bid_distance > 0 and best_bid_quantity > 50:
+        #if bid_distance > 0 and best_bid_quantity > 50:
+        if offer_idx > 0 and sum(bid_prices[:offer_idx]) > 75:
             logging.info('Cancelling position')
+            # Does liquidate our position, which has a potential for loss
             self._handle_cancel_purchase(orderbook_event)
 
     # I think a queueing system may be necessary to maintain order and make sure things
@@ -123,7 +132,7 @@ class ArbBot():
 
     # Liquidate asset or change price, depending on position ahead of us 
     def _handle_waiting_for_sale(self, orderbook_event):
-        self.state = ArbBot.WAITING_FOR_SALE
+        self.state = ArbBot.STATE_WAITING_FOR_SALE
         logging.info('Waiting for sale')
         best_ask_price, best_ask_quantity = orderbook_event.asks[0]
         dist = self.strike_price - best_ask_price

@@ -83,8 +83,8 @@ async def callback(event):
     # Implement market status event here
 
 if __name__ == '__main__':
-    p = pi.PredictItAPI('5782')
-    p.authenticate('../../auth.txt')
+    p = pi.PredictItAPI('5804')
+    p.authenticate('auth.txt')
     contracts = p.get_market_contract_ids()
     print(contracts)
     #for c in contracts:

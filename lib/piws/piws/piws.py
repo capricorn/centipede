@@ -300,7 +300,7 @@ class PredictItWebSocket():
             'Host': 's-usc1c-nss-203.firebaseio.com'
         }
 
-        req = requests.Request('GET', 'https://s-usc1c-nss-202.firebaseio.com/.ws', params=params).prepare()
+        req = requests.Request('GET', 'https://s-usc1c-nss-201.firebaseio.com/.ws', params=params).prepare()
         url = 'wss://' + req.url[8:]
 
         return await websockets.connect(url, ping_interval=None)

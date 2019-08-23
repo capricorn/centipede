@@ -134,7 +134,7 @@ ws.subscribe_market_status()
 '''
 
 ws = piws.PredictItWebSocket()
-ws.set_market_filter(lambda market_id: market_id != '5787')
+ws.set_market_filter(lambda market_id: str(market_id) != '5804')
 ws.set_queue_callback(callback2)
 ws.subscribe_contract_status()
 ws.subscribe_market_status()

@@ -15,7 +15,7 @@ entire market itself, rather than subsets of that market.
 
 How to find neg arb markets, where C represents all contracts in the market:
 
-[](doc/negarb.png)
+![](doc/negarb.png)
 
 However, the focus was on the [tweet market bot](https://github.com/capricorn/centipede/blob/master/trading/tweetbuy.py).
 The following inspired the strategy:
@@ -41,7 +41,7 @@ The tweet markets were particularly alluring because of their high volatility.
 
 Any way to show an image of the tweet market?
 
-[](doc/analysis.png)
+![](doc/analysis.png)
 
 The top graph shows the price data of each bracket over
 the course of the market. The vertical lines are when tweets
@@ -65,9 +65,9 @@ would have to be dumped for a small loss, whatever the spread was.
 Here are two instances where things worked out, with a small number of
 contracts:
 
-[](doc/trade_1.png)
+![](doc/trade_1.png)
 
-[](doc/trade_2.png)
+![](doc/trade_2.png)
 
 #### Performance
 

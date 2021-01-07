@@ -1,8 +1,21 @@
-Strategies experimented with here:
+#### Centipede
+
+What this project contains:
 
 - tweetbot for DJT tweet markets 
 - naive market maker (just tried to buy/sell contracts if a spread >= 3 existed)
 - negarb markets (not quite correct)
+
+#### Project structure
+
+```
+doc/     - various documentation related to strategies or assets for this readme
+lib/     - predictit / twitter apis created for this project
+tools/   - tools for saving and analyzing predictit data
+trading/ - implementation of trading strategies
+```
+
+#### Strategies
 
 The [market maker](https://github.com/capricorn/centipede/blob/master/trading/arbbot.py) 
 simply tried to buy/sell a fixed number of shares if a contract

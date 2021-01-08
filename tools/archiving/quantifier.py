@@ -71,6 +71,7 @@ async def callback2(event):
 
     # Display orderbook deltas for all contracts in market inbetween, so you get a better idea?
     # Or just make a separate callback and run them side-by-side
+    '''
     if type(event) == piws.MarketStatsEvent:
         market_volume.append(event)
         if len(market_volume) == 2:
@@ -80,6 +81,13 @@ async def callback2(event):
             print(market_volume[0].shares_traded)
             print(f'shares traded: {market_volume[1].shares_traded - market_volume[0].shares_traded}\n')
             market_volume.pop(0)
+    '''
+    if type(event) == piws.MarketStatsEvent:
+        qlogger.info(f'Market update: {event.market_id}: {event.shares_traded} ({event.timestamp})')
+    if type(event) == piws.ContractStatsEvent:
+        qlogger.info(f'Contract stats: {event.contract_id} ({event.timestamp})')
+    if type(event) == piws.OrderbookEvent:
+        qlogger.info(f'Orderbook event: {event.contract_id} ({event.timestamp})')
 
     '''
     if type(event) == piws.ContractStatsEvent or type(event) == piws.MarketStatsEvent:
@@ -103,13 +111,45 @@ async def callback2(event):
             pass
     '''
 
+# Keep in mind we need to filter by the contract
+# Start by just tracking states
+contract_events = {}
+states = {}
+STATE_OB_EVENT = 0
+STATE_CS_EVENT = 1
+STATE_MS_EVENT = 2
+STATE_INIT = 3
+market_quantity = []
+async def callback3(event):
+    global market_quantity
+    # Have to check every subscribed contract in this case?
+    if type(event) == piws.MarketStatsEvent:
+        qlogger.info('market stats event')
+        market_quantity.append(event.shares_traded)
+        if len(market_quantity) == 2:
+            qlogger.info(market_quantity[1] - market_quantity[0])
+            market_quantity.pop(0)
+    if type(event) == piws.ContractStatsEvent:
+        qlogger.info('contract stats event')
+    if type(event) == piws.OrderbookEvent:
+        qlogger.info('orderbook change event')
+
+#logging.basicConfig(format='(%(module)s) [%(asctime)s] %(message)s')
+
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter(fmt='(%(module)s) [%(asctime)s] %(message)s'))
+
 logger = logging.getLogger('piws')
 logger.setLevel(logging.DEBUG)
-logger.addHandler(logging.StreamHandler())
+logger.addHandler(handler)
 
 l = logging.getLogger('asyncio')
 l.setLevel(logging.DEBUG)
-l.addHandler(logging.StreamHandler())
+l.addHandler(handler)
+
+qlogger = logging.getLogger(__name__)
+qlogger.setLevel(logging.DEBUG)
+qlogger.addHandler(handler)
 
 '''
 markets = ['5782', '5787']
@@ -133,8 +173,16 @@ ws.subscribe_contract_status()
 ws.subscribe_market_status()
 '''
 
+MARKET = '5812'
+p = pi.PredictItAPI(MARKET)
+contracts = p.get_market_contract_ids()
+
 ws = piws.PredictItWebSocket()
-ws.set_market_filter(lambda market_id: str(market_id) != '5804')
+ws.set_market_filter(lambda market_id: str(market_id) != MARKET)
+ws.set_contract_stats_filter(lambda contract_id: contract_id not in contracts)
+for contract in contracts:
+    ws.subscribe_contract_orderbook(contract)
+#ws.set_queue_callback(callback2)
 ws.set_queue_callback(callback2)
 ws.subscribe_contract_status()
 ws.subscribe_market_status()

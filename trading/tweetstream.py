@@ -43,22 +43,29 @@ class TweetStream():
         self.auth = tweepy.AppAuthHandler(self.api_key, self.api_secret)
         self.api = tweepy.API(self.auth)
 
-        previous_tweets = self._get_tweets_until_date()
+        previous_tweets = self.get_tweets_until_date()
         count = len(previous_tweets)
         print(count)
         last_id = previous_tweets[0].id
+        print(previous_tweets[0].text)
+        print(previous_tweets[0].created_at)
         #initial_tweet = api.user_timeline(id=DJT_USER_ID, count=1)[0]
         #current_id = initial_tweet.id
         while True:
-            for tweet in tweepy.Cursor(self.api.user_timeline, id=WH_USER_ID, since_id=last_id).items():
-                last_id = tweet.id
-                count += 1
-                if self.callback:
-                    self.callback(tweet, count)
-                    sys.exit(0)
-            
-            # This is a significant bottleneck
-            time.sleep(1)
+            try:
+                for tweet in tweepy.Cursor(self.api.user_timeline, id=DJT_USER_ID, since_id=last_id).items():
+                    last_id = tweet.id
+                    count += 1
+                    if self.callback:
+                        self.callback(tweet, count)
+                        sys.exit(0)
+                
+                # This is a significant bottleneck?
+                time.sleep(1)
+            except tweepy.TweepError as e:
+                print(f'Waiting 30 seconds: {e.response.text}')
+                time.sleep(30)
+
 
     # callback is a function that takes a tweet object as an argument
     def set_callback(self, callback):

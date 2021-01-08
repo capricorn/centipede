@@ -94,10 +94,13 @@ but the strategy never quite panned out for that to be necessary.
 #### Issues
 
 - Liquidity issues
-- When the strategy should actually start (how many days in to the market)
+- When the strategy should actually start (how many days into the market)
 - Selecting a bracket (automation problem)
 - How long to hold the position (automation problem)
 - Bannable
 
-#### Result
+#### Project Status
 
+This project is currently abandoned, in part because tweet markets have since been removed from PI,
+but also due to the difficulty in fully automating the strategy. The tweet market strategy required manual
+execution.

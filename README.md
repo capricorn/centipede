@@ -26,10 +26,6 @@ looked for 'negative arbitrage' opportunities,
 perfect hedges that guaranteed a profit. That script only checked the
 entire market itself, rather than subsets of that market.
 
-How to find neg arb markets, where C represents all contracts in the market:
-
-![](doc/negarb.png)
-
 However, the focus was on the [tweet market bot](https://github.com/capricorn/centipede/blob/master/trading/tweetbuy.py).
 The following inspired the strategy:
 
